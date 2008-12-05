@@ -1,5 +1,5 @@
 package Apache2::Mojo;
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 
 use strict;
@@ -15,10 +15,18 @@ use APR::URI;
 use Mojo::Loader;
 
 
+eval "use Apache2::ModSSL";
+if ($@) {
+    *_is_https = \&_is_https_fallback;
+} else {
+    *_is_https = \&_is_https_modssl;
+}
+
 my $_app = undef;
 
+
 sub _app {
-    if($ENV{MOJO_RELOAD} and $_app) {
+    if ($ENV{MOJO_RELOAD} and $_app) {
         Mojo::Loader->reload;
         $_app = undef;
     }
@@ -29,6 +37,7 @@ sub _app {
 sub handler {
     my $r = shift;
 
+    # call _app() only once (because of MOJO_RELOAD)
     my $app = _app;
     my $tx  = $app->build_tx;
     my $req = $tx->req;
@@ -80,8 +89,9 @@ sub _request {
     $base->port($port);
 
     # scheme
-    $url->scheme($r->parsed_uri->scheme);
-    $base->scheme($r->parsed_uri->scheme);
+    my $scheme = _is_https($r) ? 'https' : 'http';
+    $url->scheme($scheme);
+    $base->scheme($scheme);
 
     # version
     if ($r->protocol =~ m|^HTTP/(\d+\.\d+)$|) {
@@ -94,7 +104,7 @@ sub _request {
     $req->state('content');
     $req->content->state('body');
     my $offset = 0;
-    while (!$req->is_state(qw/done error/)) {
+    while (!$req->is_finished) {
         last unless (my $read = $r->read(my $buffer, 4096, $offset));
         $offset += $read;
         $req->parse($buffer);
@@ -117,10 +127,38 @@ sub _response {
     }
 
     # content-type gets ignored in headers_out()
-    $r->content_type($headers->header('Content-Type'));
+    $r->content_type($headers->content_type);
 
     # body
-    print $res->body;
+    my $offset = 0;
+    while (1) {
+        my $chunk = $res->get_body_chunk($offset);
+
+        # No content yet, try again
+        unless (defined $chunk) {
+            sleep 1;
+            next;
+        }
+
+        # End of content
+        last unless length $chunk;
+
+        # Content
+        my $written = $r->print($chunk);
+        $offset += $written;
+    }
+}
+
+sub _is_https_modssl {
+    my ($r) = @_;
+
+    return $r->connection->is_https;
+}
+
+sub _is_https_fallback {
+    my ($r) = @_;
+
+    return $r->get_server_port == 443;
 }
 
 
@@ -136,7 +174,7 @@ Apache2::Mojo - mod_perl2 handler for Mojo
 
 =head1 VERSION
 
-version 0.001
+version 0.002
 
 =head1 SYNOPSIS
 

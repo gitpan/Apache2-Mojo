@@ -6,6 +6,6 @@ generated_by: Dist::Zilla::Plugin::MetaYaml version 1.003
 license: perl
 name: Apache2-Mojo
 requires: 
-  Apache2: 0
-  Mojo: 0
-version: 0.001
+  Mojo: 0.9
+  mod_perl2: 2.0
+version: 0.002
