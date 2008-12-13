@@ -1,5 +1,5 @@
 package Apache2::Mojo;
-our $VERSION = '0.002';
+our $VERSION = '0.003';
 
 
 use strict;
@@ -118,16 +118,14 @@ sub _response {
     $r->status($res->code);
 
     # headers
+    $res->fix_headers;
     my $headers = $res->headers;
-    foreach my $key ($headers->names) {
+    foreach my $key (@{$headers->names}) {
         my @value = $headers->header($key);
         next unless @value;
         $r->headers_out->set($key => shift @value);
         $r->headers_out->add($key => $_) foreach (@value);
     }
-
-    # content-type gets ignored in headers_out()
-    $r->content_type($headers->content_type);
 
     # body
     my $offset = 0;
@@ -174,7 +172,7 @@ Apache2::Mojo - mod_perl2 handler for Mojo
 
 =head1 VERSION
 
-version 0.002
+version 0.003
 
 =head1 SYNOPSIS
 

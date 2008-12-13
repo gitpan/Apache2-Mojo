@@ -8,4 +8,4 @@ name: Apache2-Mojo
 requires: 
   Mojo: 0.9
   mod_perl2: 2.0
-version: 0.002
+version: 0.003
