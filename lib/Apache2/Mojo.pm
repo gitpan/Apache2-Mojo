@@ -1,15 +1,18 @@
 package Apache2::Mojo;
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 
 use strict;
 use warnings;
 
+use Apache2::Connection;
 use Apache2::Const -compile => qw(OK);
 use Apache2::RequestIO;
 use Apache2::RequestRec;
 use Apache2::RequestUtil;
 use Apache2::URI;
+use APR::SockAddr;
+use APR::Table;
 use APR::URI;
 
 use Mojo::Loader;
@@ -40,10 +43,12 @@ sub handler {
     # call _app() only once (because of MOJO_RELOAD)
     my $app = _app;
     my $tx  = $app->build_tx;
-    my $req = $tx->req;
+
+    # Transaction
+    _transaction($r, $tx);
 
     # Request
-    _request($r, $req);
+    _request($r, $tx->req);
 
     # Handler
     $app->handler($tx);
@@ -54,6 +59,21 @@ sub handler {
     _response($r, $res);
 
     return Apache2::Const::OK;
+}
+
+sub _transaction {
+    my ($r, $tx) = @_;
+
+    # local and remote address (needs Mojo 0.9002)
+    if ($tx->can('remote_address')) {
+        my $c = $r->connection;
+        my $local_sa = $c->local_addr;
+        $tx->local_address($local_sa->ip_get);
+        $tx->local_port($local_sa->port);
+        my $remote_sa = $c->remote_addr;
+        $tx->remote_address($remote_sa->ip_get);
+        $tx->remote_port($remote_sa->port);
+    }
 }
 
 sub _request {
@@ -69,7 +89,12 @@ sub _request {
     }
 
     # path
-    $url->path->parse($r->path_info);
+    if ($r->location eq '/') {
+        # bug in older mod_perl (e. g. 2.0.3 in Ubuntu Hardy LTS)
+        $url->path->parse($r->uri);
+    } else {
+        $url->path->parse($r->path_info);
+    }
 
     # query
     $url->query->parse($r->parsed_uri->query);
@@ -123,8 +148,14 @@ sub _response {
     foreach my $key (@{$headers->names}) {
         my @value = $headers->header($key);
         next unless @value;
-        $r->headers_out->set($key => shift @value);
-        $r->headers_out->add($key => $_) foreach (@value);
+
+        # special treatment for content-type
+        if ($key eq 'Content-Type') {
+            $r->content_type($value[0]);
+        } else {
+            $r->headers_out->set($key => shift @value);
+            $r->headers_out->add($key => $_) foreach (@value);
+        }
     }
 
     # body
@@ -172,7 +203,7 @@ Apache2::Mojo - mod_perl2 handler for Mojo
 
 =head1 VERSION
 
-version 0.003
+version 0.004
 
 =head1 SYNOPSIS
 
